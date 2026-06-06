@@ -189,6 +189,12 @@ curl -X GET http://localhost:8000/is_sleeping
 # Returns {"is_sleeping": true/false}
 ```
 
+## Skill
+I added a skill in the skills/ directory to use this vllm server. It is hard-coded to talk to llama.cpp and load/unload itself and the vllm model. Set these environment vars:
+- `LLAMA_SERVER_URL`
+- `VLLM_SERVER_URL`
+- `QWEN_MEDIA_DIR`
+
 ## TODO
 This warning slows down inference, tracked in this issue https://github.com/vllm-project/vllm/issues/43009
 ```
