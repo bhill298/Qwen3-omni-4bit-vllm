@@ -14,10 +14,9 @@ Lets you do media analysis with Qwen3-omni (via vLLM) and automatically offloads
    - **CRITICAL for Windows/MSYS Bash**: The variable likely contains Windows paths with backslashes and spaces (e.g., `C:\Users\Name\Media`).
    - **How to check and verify**: Run `printenv QWEN_MEDIA_DIR` to see the value. Verify the directory exists by running `ls -ld "$QWEN_MEDIA_DIR"`.
    - **How to use it in Bash**: ALWAYS enclose the variable in double quotes (e.g., `cp media.mp4 "$QWEN_MEDIA_DIR/"`) in all bash commands. Do not attempt to manually escape backslashes, just use double quotes.
-   - **How to use it in JSON**: Backslashes will break JSON syntax. When generating `tasks.json` via bash, you MUST convert backslashes to forward slashes first using bash string replacement: `SAFE_DIR="${QWEN_MEDIA_DIR//\\//}"`, and use `$SAFE_DIR` in your JSON generation. Alternatively, write a small Python script to generate the JSON.
 2. **Copy Media**: The vLLM server only accesses `$QWEN_MEDIA_DIR`. Copy target files here first.
 3. **Create Prompts**: Write text prompts as `.txt` files in `$QWEN_MEDIA_DIR`.
-4. **Create tasks.json**: JSON array mapping media to prompt files.
+4. **Create tasks.json**: JSON array mapping media to prompt files. Use the provided helper script `scripts/generate_tasks.py` to avoid JSON escaping issues with Windows backslashes.
 
 ### 2. Pre-computation (Optional)
 Check media details to estimate processing times and override default sizes if needed:
@@ -35,8 +34,8 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 ```json
 [
   {
-    "media": "$SAFE_DIR/sunset.jpg",
-    "prompt": "$SAFE_DIR/prompt.txt",
+    "media": "C:/Users/Name/Media/sunset.jpg",
+    "prompt": "C:/Users/Name/Media/prompt.txt",
     "max_image_size": 768, "max_video_size": 512, "video_fps": 2.0, "max_video_duration": 120.0
   }
 ]
@@ -44,7 +43,18 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 *(Overrides are optional. Sizes constrain the longest edge;aspect ratio is maintained).*
 
 ### 4. Execute Script
-Run `scripts/qwen3_omni_batch.py` relative to the skill directory. **IMPORTANT**: Use a long bash timeout (e.g., `timeout: 86400000`) since the script can take a long time. Requires `requests` and `ffmpeg`.
+Run `scripts/qwen3_omni_batch.py` relative to the skill directory. Requires `requests` and `ffmpeg`.
+
+**CRITICAL TIMEOUT INSTRUCTION**: You MUST always run this script under bash with a very long timeout. You MUST set the exact timeout to `86400000` (24 hours) for this command. Always run with this exact timeout when running this script, all the time, no exceptions. Do not use the default timeout.
+
+Example tool call:
+```json
+{
+  "command": "python scripts/qwen3_omni_batch.py tasks.json",
+  "description": "Run Qwen3-Omni batch script",
+  "timeout": 86400000
+}
+```
 
 ```bash
 # Optional CLI args: --max-image-size 768, --max-video-size 512, --video-fps 2.0, --max-video-duration -1.0, --skip-llama-unload
@@ -59,10 +69,12 @@ Use bash to delete your copied media, prompt files, and generated `_audio.wav` f
 ```bash
 cp example.mp4 "$QWEN_MEDIA_DIR/example.mp4"
 echo "What happens in this video?" > "$QWEN_MEDIA_DIR/prompt.txt"
-SAFE_DIR="${QWEN_MEDIA_DIR//\\//}"
-cat << EOF > tasks.json
-[{"media": "$SAFE_DIR/example.mp4", "prompt": "$SAFE_DIR/prompt.txt"}]
-EOF
+
+# Generate tasks.json using the helper script to avoid escaping issues
+python scripts/generate_tasks.py "$QWEN_MEDIA_DIR/example.mp4" "$QWEN_MEDIA_DIR/prompt.txt" > tasks.json
+
+# Execute the batch script (REMEMBER to set timeout: 86400000 in your tool call!)
 python scripts/qwen3_omni_batch.py tasks.json
+
 rm "$QWEN_MEDIA_DIR/example.mp4" "$QWEN_MEDIA_DIR/prompt.txt" "$QWEN_MEDIA_DIR/example_audio.wav" tasks.json
 ```
