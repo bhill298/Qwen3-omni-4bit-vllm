@@ -141,10 +141,56 @@ def query_model(messages, timeout=None):
     return data["choices"][0]["message"]["content"]
 
 
-def process_task(task):
+def process_task(task, args):
     """Process one media+prompt task."""
     media_path = Path(task["media"]).resolve()
     media_dir = Path(CONFIG["media_dir"]).resolve()
+
+    # ---------------------------------------------------------
+    # Preprocessing: Scale/Truncate media in-place with ffmpeg
+    # ---------------------------------------------------------
+    max_img = task.get("max_image_size", args.max_image_size)
+    max_vid = task.get("max_video_size", args.max_video_size)
+    fps = task.get("video_fps", args.video_fps)
+    max_dur = task.get("max_video_duration", args.max_video_duration)
+
+    vid = is_video(media_path)
+    tmp_path = media_path.with_name(f".tmp_{media_path.name}")
+
+    try:
+        if vid:
+            log(f"  Preprocessing video: max_size={max_vid}, fps={fps}, max_duration={max_dur}")
+            cmd = ["ffmpeg", "-i", str(media_path), "-y"]
+            if max_dur > 0:
+                cmd.extend(["-t", str(max_dur)])
+
+            vf = f"fps={fps},scale='min({max_vid},iw)':'min({max_vid},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+            cmd.extend(["-vf", vf, "-c:v", "libx264", "-preset", "fast", str(tmp_path)])
+
+            res = subprocess.run(cmd, capture_output=True, check=False)
+            if res.returncode == 0:
+                tmp_path.replace(media_path)
+            else:
+                log(f"  Warning: Video preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                if tmp_path.exists():
+                    tmp_path.unlink()
+        else:
+            log(f"  Preprocessing image: max_size={max_img}")
+            cmd = ["ffmpeg", "-i", str(media_path), "-y"]
+            vf = f"scale='min({max_img},iw)':'min({max_img},ih)':force_original_aspect_ratio=decrease"
+            cmd.extend(["-vf", vf, str(tmp_path)])
+
+            res = subprocess.run(cmd, capture_output=True, check=False)
+            if res.returncode == 0:
+                tmp_path.replace(media_path)
+            else:
+                log(f"  Warning: Image preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                if tmp_path.exists():
+                    tmp_path.unlink()
+    except Exception as e:
+        log(f"  Warning: Preprocessing threw an exception: {e}")
+        if tmp_path.exists():
+            tmp_path.unlink()
     
     # Enforce that the file is in the mounted media directory
     try:
@@ -200,6 +246,10 @@ def process_task(task):
 def main():
     parser = argparse.ArgumentParser(description="Qwen3-Omni Batch Media Processor")
     parser.add_argument("tasks_file", nargs="?", help="JSON tasks file (reads stdin if omitted)")
+    parser.add_argument("--max-image-size", type=int, default=768, help="Max longest edge for images (default 768)")
+    parser.add_argument("--max-video-size", type=int, default=512, help="Max longest edge for video frames (default 512)")
+    parser.add_argument("--video-fps", type=float, default=2.0, help="Frame rate for video downsampling (default 2.0)")
+    parser.add_argument("--max-video-duration", type=float, default=-1.0, help="Max seconds of video to process, -1 for full video (default -1)")
     args = parser.parse_args()
 
     if args.tasks_file:
@@ -247,7 +297,7 @@ def main():
         for i, task in enumerate(tasks):
             log(f"\n--- Task {i+1}/{len(tasks)} ---")
             try:
-                result = process_task(task)
+                result = process_task(task, args)
                 results.append(result)
             except Exception as e:
                 log(f"  ERROR: {e}")

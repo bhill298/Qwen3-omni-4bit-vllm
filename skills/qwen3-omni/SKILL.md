@@ -30,10 +30,15 @@ Create a `tasks.json` array containing the paths to the media and prompts you ju
 [
   {
     "media": "$QWEN_MEDIA_DIR/sunset.jpg",
-    "prompt": "$QWEN_MEDIA_DIR/prompt.txt"
+    "prompt": "$QWEN_MEDIA_DIR/prompt.txt",
+    "max_image_size": 768,
+    "max_video_size": 512,
+    "video_fps": 2.0,
+    "max_video_duration": 120.0
   }
 ]
 ```
+*(Note: `max_image_size`, `max_video_size`, `video_fps`, and `max_video_duration` are optional fields that override the script's global defaults for the batch. The "max" sizes denote the maximum length in pixels of the longest edge of the image or video; aspect ratio is strictly maintained.)*
 
 ### 4. Execute the Script
 Run the bundled script located in the `scripts/` folder of this skill. If you are in the project root, the path is `.opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py`:
@@ -41,7 +46,12 @@ Run the bundled script located in the `scripts/` folder of this skill. If you ar
 **IMPORTANT:** The script can take a long time. When running this script via the bash tool, set a very long timeout of at least 24 hours (e.g., `timeout: 86400000`) to ensure work isn't lost from the script being interrupted.
 
 ```bash
-python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json
+# You can also pass optional CLI arguments to set global defaults for the batch:
+# --max-image-size 768 (default, max length of the longest edge in pixels)
+# --max-video-size 512 (default, max length of the longest edge in pixels)
+# --video-fps 2.0 (default)
+# --max-video-duration -1.0 (default is -1, meaning process the whole video)
+python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json --max-video-duration 120.0
 ```
 
 The script will automatically:
