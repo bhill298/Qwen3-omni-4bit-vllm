@@ -19,6 +19,13 @@ Write the text prompts you want to use as `.txt` files (e.g., `$QWEN_MEDIA_DIR/p
 
 ### 3. Create Tasks JSON
 Create a `tasks.json` array containing the paths to the media and prompts you just placed in the media directory.
+
+**Batching Guidelines & Time Estimates:**
+- Batch multiple tasks together. Each script invocation results in the model getting loaded/unloaded, which adds overhead to multiple separate calls.
+- Don't batch too many things together, otherwise interruptions will result in losing everything. Try to limit total execution time to an expected 1 hour max, if possible.
+- **Videos:** Take roughly 30x their length to process (longer for higher resolution).
+- **Images:** Take around 1 minute each (depending on size).
+
 ```json
 [
   {
@@ -30,6 +37,8 @@ Create a `tasks.json` array containing the paths to the media and prompts you ju
 
 ### 4. Execute the Script
 Run the bundled script located in the `scripts/` folder of this skill. If you are in the project root, the path is `.opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py`:
+
+**IMPORTANT:** The script can take a long time. When running this script via the bash tool, set a very long timeout of at least 24 hours (e.g., `timeout: 86400000`) to ensure work isn't lost from the script being interrupted.
 
 ```bash
 python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json
