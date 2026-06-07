@@ -20,6 +20,22 @@ Write the text prompts you want to use as `.txt` files (e.g., `$QWEN_MEDIA_DIR/p
 ### 3. Create Tasks JSON
 Create a `tasks.json` array containing the paths to the media and prompts you just placed in the media directory.
 
+### Pre-computation Checks
+To accurately estimate batch processing times and ensure inputs won't produce too many tokens, you can use `ffprobe` (included with `ffmpeg`) to determine the resolution, frame rate, and duration of the media.
+
+You can check multiple files at once using a bash loop to minimize tool calls:
+```bash
+for f in "$QWEN_MEDIA_DIR"/*; do
+  echo "$f:";
+  ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,duration -of default=noprint_wrappers=1:nokey=1 "$f"; 
+  echo "---";
+done
+```
+*Output order for each file: Width, Height, Framerate (e.g. 30/1), Duration (in seconds).*
+*Note: Images will also report a dummy duration and framerate (usually 25/1 and 0.04).*
+
+Use this information in conjunction with the batching guidelines below to decide if you need to override the `--max-image-size`, `--max-video-size`, or `--max-video-duration` arguments for the script.
+
 **Batching Guidelines & Time Estimates:**
 - Batch multiple tasks together. Each script invocation results in the model getting loaded/unloaded, which adds overhead to multiple separate calls.
 - Don't batch too many things together, otherwise interruptions will result in losing everything. Try to limit total execution time to an expected 1 hour max, if possible.
