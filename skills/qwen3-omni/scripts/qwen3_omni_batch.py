@@ -61,10 +61,28 @@ def unload_llama_models():
             )
             r.raise_for_status()
             log(f"  -> OK")
+        # poll until all models are no longer loaded
+        MAX_ATTEMPTS = 20
+        for _ in range(MAX_ATTEMPTS):
+            check = requests.get(
+                f"{CONFIG['llama_server']}/v1/models",
+                timeout=10,
+            )
+            check.raise_for_status()
+            models = check.json().get("data", [])
+            loaded = [m["id"] for m in models if m['status']['value'] == "loaded"]
+            if len(loaded) == 0:
+                break
+            time.sleep(0.5)
+        else:
+            raise RuntimeError(f"Llama models still loaded after checking for {MAX_ATTEMPTS} attempts")
+        # probably not needed
+        time.sleep(.1)
     except requests.exceptions.ConnectionError:
-        log("Warning: Could not connect to llama.cpp server. Continuing.")
+        log("Error could not connect to llama.cpp server. Continuing.")
     except Exception as e:
-        log(f"Warning: Error unloading llama models ({e}). Continuing.")
+        log(f"Error unloading llama models ({e}).")
+        raise
 
 
 def _server_alive():
@@ -215,12 +233,16 @@ def main():
     results = []
 
     try:
+        # this waits until the model shows unloaded
         unload_llama_models()
+        # need to wake before we send any requests (or else they will block in the queue)
+        # fine if it's already awake so no need to check
         wake_vllm()
 
         print('waiting for server to come back up...')
+        # the wake up message is blocking, but this doesn't hurt to have just in case
         while not _server_alive():
-            time.sleep(5)
+            time.sleep(2)
 
         for i, task in enumerate(tasks):
             log(f"\n--- Task {i+1}/{len(tasks)} ---")
