@@ -1,18 +1,18 @@
 ---
 name: qwen3-omni
-description: Batch-process images and videos through the Qwen3-Omni multimodal model on vLLM to get text descriptions. Use when you need to describe images, analyze video content, or transcribe/describe video audio.
+description: Batch-process images, audio, and videos through the Qwen3-Omni multimodal model on vLLM to get text descriptions. Use when you need to describe images, analyze video content, or transcribe/describe audio.
 ---
 
 # Qwen3-Omni Multimodal Processing
 
-This skill lets you temporarily offload VRAM from your local llama.cpp model to the Qwen3-Omni multimodal model (running via vLLM) in order to analyze images and videos.
+This skill lets you temporarily offload VRAM from your local llama.cpp model to the Qwen3-Omni multimodal model (running via vLLM) in order to analyze images, audio files, and videos.
 
 ## Agent Workflow
 
-When you need to describe an image or video, you MUST follow these exact steps:
+When you need to describe an image, audio, or video file, you MUST follow these exact steps:
 
 ### 1. Copy Media Files
-The vLLM server only has access to the directory specified by the `$QWEN_MEDIA_DIR` environment variable. **You must copy** the target image and video files into `$QWEN_MEDIA_DIR` before processing.
+The vLLM server only has access to the directory specified by the `$QWEN_MEDIA_DIR` environment variable. **You must copy** the target image, audio, and video files into `$QWEN_MEDIA_DIR` before processing.
 
 ### 2. Create Prompt Files
 Write the text prompts you want to use as `.txt` files (e.g., `$QWEN_MEDIA_DIR/prompt.txt`). Example: `"Describe this video in detail, paying attention to the audio."`
@@ -41,6 +41,7 @@ Use this information in conjunction with the batching guidelines below to decide
 - Don't batch too many things together, otherwise interruptions will result in losing everything. Try to limit total execution time to an expected 1 hour max, if possible.
 - **Videos:** Take roughly 3x to 5x their length to process when using the default 512px/2fps downsampling constraints (e.g. a 5-second video takes ~15 seconds). Note that processing raw, high-resolution/high-FPS video *without* these constraints can easily take upwards of 30x the video length or cause OOM crashes.
 - **Images:** Take around 10 to 15 seconds each when using the default 768px constraint. High-res images without this limit can take over 1 minute each.
+- **Audio:** Audio files (e.g., .wav, .mp3) are processed very quickly and do not undergo downsampling.
 
 ```json
 [

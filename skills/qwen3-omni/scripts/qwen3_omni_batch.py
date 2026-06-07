@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-qwen3_omni_batch.py - Batch process images/videos through Qwen3-Omni on vLLM.
+qwen3_omni_batch.py - Batch process images/videos/audio through Qwen3-Omni on vLLM.
 
 This script expects the media files to ALREADY be located inside the
 configured media directory, because it passes direct file:///media/... URIs to
@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import requests
+
 requests.packages.urllib3.util.connection.HAS_IPV6 = False
 
 
@@ -31,6 +32,7 @@ CONFIG = {
 
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".wmv", ".flv", ".mpeg", ".mpg"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac"}
 
 
 def log(msg):
@@ -41,6 +43,7 @@ def log(msg):
 # Model lifecycle management
 # ---------------------------------------------------------------------------
 
+
 def unload_llama_models():
     """Unload all loaded models from the llama.cpp server to free VRAM."""
     log("=== Unloading llama.cpp models ===")
@@ -48,7 +51,7 @@ def unload_llama_models():
         resp = requests.get(f"{CONFIG['llama_server']}/v1/models", timeout=10)
         resp.raise_for_status()
         models = resp.json().get("data", [])
-        loaded = [m["id"] for m in models if m['status']['value'] == "loaded"]
+        loaded = [m["id"] for m in models if m["status"]["value"] == "loaded"]
         if not loaded:
             log("No loaded models found on llama.cpp server.")
             return
@@ -70,14 +73,16 @@ def unload_llama_models():
             )
             check.raise_for_status()
             models = check.json().get("data", [])
-            loaded = [m["id"] for m in models if m['status']['value'] == "loaded"]
+            loaded = [m["id"] for m in models if m["status"]["value"] == "loaded"]
             if len(loaded) == 0:
                 break
             time.sleep(0.5)
         else:
-            raise RuntimeError(f"Llama models still loaded after checking for {MAX_ATTEMPTS} attempts")
+            raise RuntimeError(
+                f"Llama models still loaded after checking for {MAX_ATTEMPTS} attempts"
+            )
         # probably not needed
-        time.sleep(.1)
+        time.sleep(0.1)
     except requests.exceptions.ConnectionError:
         log("Error could not connect to llama.cpp server. Continuing.")
     except Exception as e:
@@ -88,7 +93,9 @@ def unload_llama_models():
 def _server_alive():
     try:
         r = requests.get(f"{CONFIG['vllm_server']}/is_sleeping", timeout=5)
-        return r.status_code == 200
+        if r.status_code == 200:
+            return r.json().get("is_sleeping") is False
+        return False
     except Exception:
         return False
 
@@ -118,8 +125,13 @@ def sleep_vllm():
 # API call & Processing
 # ---------------------------------------------------------------------------
 
+
 def is_video(path):
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def is_audio(path):
+    return Path(path).suffix.lower() in AUDIO_EXTENSIONS
 
 
 def query_model(messages, timeout=None):
@@ -155,11 +167,17 @@ def process_task(task, args):
     max_dur = task.get("max_video_duration", args.max_video_duration)
 
     vid = is_video(media_path)
-    tmp_path = media_path.with_name(f".tmp_{media_path.name}")
+    aud = is_audio(media_path)
+    tmp_path = None
 
     try:
         if vid:
-            log(f"  Preprocessing video: max_size={max_vid}, fps={fps}, max_duration={max_dur}")
+            log(
+                f"  Preprocessing video: max_size={max_vid}, fps={fps}, max_duration={max_dur}"
+            )
+            # Output to .mp4 to ensure libx264 compatibility (e.g. for .webm inputs)
+            tmp_path = media_path.with_suffix(".tmp.mp4")
+
             cmd = ["ffmpeg", "-i", str(media_path), "-y"]
             if max_dur > 0:
                 cmd.extend(["-t", str(max_dur)])
@@ -169,13 +187,26 @@ def process_task(task, args):
 
             res = subprocess.run(cmd, capture_output=True, check=False)
             if res.returncode == 0:
-                tmp_path.replace(media_path)
+                try:
+                    media_path.unlink()
+                except OSError:
+                    pass
+                media_path = media_path.with_suffix(".mp4")
+                tmp_path.rename(media_path)
+                task["media"] = str(media_path)  # update task with new extension
             else:
-                log(f"  Warning: Video preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                log(
+                    f"  Warning: Video preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}"
+                )
                 if tmp_path.exists():
                     tmp_path.unlink()
+
+        elif aud:
+            log(f"  Preprocessing audio: no downsampling required")
+
         else:
             log(f"  Preprocessing image: max_size={max_img}")
+            tmp_path = media_path.with_name(f".tmp_{media_path.name}")
             cmd = ["ffmpeg", "-i", str(media_path), "-y"]
             vf = f"scale='min({max_img},iw)':'min({max_img},ih)':force_original_aspect_ratio=decrease"
             cmd.extend(["-vf", vf, str(tmp_path)])
@@ -184,14 +215,20 @@ def process_task(task, args):
             if res.returncode == 0:
                 tmp_path.replace(media_path)
             else:
-                log(f"  Warning: Image preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                log(
+                    f"  Warning: Image preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}"
+                )
                 if tmp_path.exists():
                     tmp_path.unlink()
+
     except Exception as e:
         log(f"  Warning: Preprocessing threw an exception: {e}")
-        if tmp_path.exists():
-            tmp_path.unlink()
-    
+        try:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
     # Enforce that the file is in the mounted media directory
     try:
         rel_media_path = media_path.relative_to(media_dir)
@@ -205,22 +242,34 @@ def process_task(task, args):
     media_uri = f"file:///media/{rel_media_path.as_posix()}"
     log(f"  Processing: {media_path.name} -> {media_uri}")
 
-    vid = is_video(media_path)
     content: list[dict] = [{"type": "text", "text": prompt_text}]
 
     if vid:
         content.append({"type": "video_url", "video_url": {"url": media_uri}})
-        
-        # Extract audio next to the video
+
+        # Extract audio next to the video if it exists
         audio_path = media_path.with_name(f"{media_path.stem}_audio.wav")
         log(f"  Extracting audio -> {audio_path.name}")
-        subprocess.run(
+        res = subprocess.run(
             ["ffmpeg", "-i", str(media_path), "-y", str(audio_path)],
             capture_output=True,
-            check=True,
+            check=False,
         )
-        audio_uri = f"file:///media/{audio_path.relative_to(media_dir).as_posix()}"
-        content.append({"type": "audio_url", "audio_url": {"url": audio_uri}})
+        if (
+            res.returncode == 0
+            and audio_path.exists()
+            and audio_path.stat().st_size > 0
+        ):
+            audio_uri = f"file:///media/{audio_path.relative_to(media_dir).as_posix()}"
+            content.append({"type": "audio_url", "audio_url": {"url": audio_uri}})
+        else:
+            log(
+                f"  No valid audio stream found or extraction failed. Skipping audio track."
+            )
+
+    elif aud:
+        content.append({"type": "audio_url", "audio_url": {"url": media_uri}})
+
     else:
         content.append({"type": "image_url", "image_url": {"url": media_uri}})
 
@@ -243,14 +292,41 @@ def process_task(task, args):
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Qwen3-Omni Batch Media Processor")
-    parser.add_argument("tasks_file", nargs="?", help="JSON tasks file (reads stdin if omitted)")
-    parser.add_argument("--max-image-size", type=int, default=768, help="Max longest edge for images (default 768)")
-    parser.add_argument("--max-video-size", type=int, default=512, help="Max longest edge for video frames (default 512)")
-    parser.add_argument("--video-fps", type=float, default=2.0, help="Frame rate for video downsampling (default 2.0)")
-    parser.add_argument("--max-video-duration", type=float, default=-1.0, help="Max seconds of video to process, -1 for full video (default -1)")
-    parser.add_argument("--skip-llama-unload", action="store_true", help="Skip unloading llama.cpp models (useful if running a non-local model)")
+    parser.add_argument(
+        "tasks_file", nargs="?", help="JSON tasks file (reads stdin if omitted)"
+    )
+    parser.add_argument(
+        "--max-image-size",
+        type=int,
+        default=768,
+        help="Max longest edge for images (default 768)",
+    )
+    parser.add_argument(
+        "--max-video-size",
+        type=int,
+        default=512,
+        help="Max longest edge for video frames (default 512)",
+    )
+    parser.add_argument(
+        "--video-fps",
+        type=float,
+        default=2.0,
+        help="Frame rate for video downsampling (default 2.0)",
+    )
+    parser.add_argument(
+        "--max-video-duration",
+        type=float,
+        default=-1.0,
+        help="Max seconds of video to process, -1 for full video (default -1)",
+    )
+    parser.add_argument(
+        "--skip-llama-unload",
+        action="store_true",
+        help="Skip unloading llama.cpp models (useful if running a non-local model)",
+    )
     args = parser.parse_args()
 
     if args.tasks_file:
@@ -291,23 +367,25 @@ def main():
         # fine if it's already awake so no need to check
         wake_vllm()
 
-        print('waiting for server to come back up...')
+        print("waiting for server to come back up...")
         # the wake up message is blocking, but this doesn't hurt to have just in case
         while not _server_alive():
             time.sleep(2)
 
         for i, task in enumerate(tasks):
-            log(f"\n--- Task {i+1}/{len(tasks)} ---")
+            log(f"\n--- Task {i + 1}/{len(tasks)} ---")
             try:
                 result = process_task(task, args)
                 results.append(result)
             except Exception as e:
                 log(f"  ERROR: {e}")
-                results.append({
-                    "media": task["media"],
-                    "prompt": task["prompt"],
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "media": task["media"],
+                        "prompt": task["prompt"],
+                        "error": str(e),
+                    }
+                )
 
     finally:
         if not args.skip_llama_unload:
