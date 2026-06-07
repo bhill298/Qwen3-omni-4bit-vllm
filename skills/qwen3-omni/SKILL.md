@@ -57,7 +57,7 @@ Use this information in conjunction with the batching guidelines below to decide
 *(Note: `max_image_size`, `max_video_size`, `video_fps`, and `max_video_duration` are optional fields that override the script's global defaults for the batch. The "max" sizes denote the maximum length in pixels of the longest edge of the image or video; aspect ratio is strictly maintained.)*
 
 ### 4. Execute the Script
-Run the bundled script located in the `scripts/` folder of this skill. If you are in the project root, the path is `.opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py`:
+Run the bundled script located at `scripts/qwen3_omni_batch.py` relative to the skill directory:
 
 **IMPORTANT:** The script can take a long time. When running this script via the bash tool, set a very long timeout of at least 24 hours (e.g., `timeout: 86400000`) to ensure work isn't lost from the script being interrupted.
 
@@ -68,15 +68,16 @@ Run the bundled script located in the `scripts/` folder of this skill. If you ar
 # --video-fps 2.0 (default)
 # --max-video-duration -1.0 (default is -1, meaning process the whole video)
 # --skip-llama-unload (optional, skips unloading llama models and skip putting vllm to sleep if you are using a non-local model)
-python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json --max-video-duration 120.0
+python scripts/qwen3_omni_batch.py tasks.json --max-video-duration 120.0
 ```
 
 The script will automatically:
-- Unload your llama.cpp model from VRAM
+- Unload your llama.cpp model from VRAM (unless `--skip-llama-unload` is passed)
 - Wake up vLLM
+- Process and downsample the media files in-place using ffmpeg based on your batch parameters
 - Pass the files using `file:///media/...` direct transfer (and extract audio for videos automatically)
 - Print a JSON array of the results to stdout
-- Put vLLM back to sleep to return VRAM to you
+- Put vLLM back to sleep to return VRAM to you (unless `--skip-llama-unload` is passed)
 
 ### 5. Clean Up (CRITICAL)
 Once you have the results, **you must clean up the files you copied** to `$QWEN_MEDIA_DIR`. Use bash commands to delete your copied media files, prompt files, and any generated `_audio.wav` files from that directory to prevent it from filling up.
@@ -95,7 +96,7 @@ cat << EOF > tasks.json
 EOF
 
 # 4. Run the script
-python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json
+python scripts/qwen3_omni_batch.py tasks.json
 
 # 5. Clean up
 rm "$QWEN_MEDIA_DIR/hero.mp4" "$QWEN_MEDIA_DIR/prompt.txt" "$QWEN_MEDIA_DIR/hero_audio.wav" tasks.json
