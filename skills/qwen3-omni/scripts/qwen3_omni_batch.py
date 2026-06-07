@@ -250,6 +250,7 @@ def main():
     parser.add_argument("--max-video-size", type=int, default=512, help="Max longest edge for video frames (default 512)")
     parser.add_argument("--video-fps", type=float, default=2.0, help="Frame rate for video downsampling (default 2.0)")
     parser.add_argument("--max-video-duration", type=float, default=-1.0, help="Max seconds of video to process, -1 for full video (default -1)")
+    parser.add_argument("--skip-llama-unload", action="store_true", help="Skip unloading llama.cpp models (useful if running a non-local model)")
     args = parser.parse_args()
 
     if args.tasks_file:
@@ -283,8 +284,9 @@ def main():
     results = []
 
     try:
-        # this waits until the model shows unloaded
-        unload_llama_models()
+        if not args.skip_llama_unload:
+            # this waits until the model shows unloaded
+            unload_llama_models()
         # need to wake before we send any requests (or else they will block in the queue)
         # fine if it's already awake so no need to check
         wake_vllm()
@@ -308,7 +310,8 @@ def main():
                 })
 
     finally:
-        sleep_vllm()
+        if not args.skip_llama_unload:
+            sleep_vllm()
 
     print(json.dumps(results, indent=2, ensure_ascii=False))
 

@@ -51,6 +51,7 @@ Run the bundled script located in the `scripts/` folder of this skill. If you ar
 # --max-video-size 512 (default, max length of the longest edge in pixels)
 # --video-fps 2.0 (default)
 # --max-video-duration -1.0 (default is -1, meaning process the whole video)
+# --skip-llama-unload (optional, skips unloading llama models and skip putting vllm to sleep if you are using a non-local model)
 python .opencode/skills/qwen3-omni/scripts/qwen3_omni_batch.py tasks.json --max-video-duration 120.0
 ```
 
