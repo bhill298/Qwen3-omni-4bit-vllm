@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import requests
+requests.packages.urllib3.util.connection.HAS_IPV6 = False
 
 
 CONFIG = {
@@ -44,10 +45,10 @@ def unload_llama_models():
     """Unload all loaded models from the llama.cpp server to free VRAM."""
     log("=== Unloading llama.cpp models ===")
     try:
-        resp = requests.get(f"{CONFIG['llama_server']}/models", timeout=10)
+        resp = requests.get(f"{CONFIG['llama_server']}/v1/models", timeout=10)
         resp.raise_for_status()
         models = resp.json().get("data", [])
-        loaded = [m["id"] for m in models if m.get("status") == "loaded"]
+        loaded = [m["id"] for m in models if m['status']['value'] == "loaded"]
         if not loaded:
             log("No loaded models found on llama.cpp server.")
             return
@@ -76,24 +77,6 @@ def _server_alive():
 
 def wake_vllm():
     """Wake up the vLLM/Qwen3-Omni server. Ok if already awake."""
-    log("=== Waking up vLLM server ===")
-    if not _server_alive():
-        log("vLLM server is not reachable. Will retry...")
-        for attempt in range(5):
-            time.sleep(2)
-            if _server_alive():
-                break
-        else:
-            log("Warning: vLLM server still not reachable. Continuing anyway.")
-
-    try:
-        r = requests.get(f"{CONFIG['vllm_server']}/is_sleeping", timeout=10)
-        if r.status_code == 200 and r.json().get("is_sleeping") is False:
-            log("vLLM server is already awake.")
-            return
-    except Exception:
-        pass
-
     try:
         resp = requests.post(f"{CONFIG['vllm_server']}/wake_up", timeout=120)
         resp.raise_for_status()
