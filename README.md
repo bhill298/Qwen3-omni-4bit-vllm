@@ -195,6 +195,8 @@ I added a skill in the skills/ directory to use this vllm server. It is hard-cod
 - `VLLM_SERVER_URL`
 - `QWEN_MEDIA_DIR`
 
+The skill also includes a script, which you can run directly. Running the script requires python with requests installed and ffmpeg.
+
 ## TODO
 This warning slows down inference, tracked in this issue https://github.com/vllm-project/vllm/issues/43009
 ```

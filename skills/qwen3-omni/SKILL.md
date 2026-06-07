@@ -71,6 +71,8 @@ Run the bundled script located at `scripts/qwen3_omni_batch.py` relative to the 
 python scripts/qwen3_omni_batch.py tasks.json --max-video-duration 120.0
 ```
 
+The script requires the python requests library and ffmpeg.
+
 The script will automatically:
 - Unload your llama.cpp model from VRAM (unless `--skip-llama-unload` is passed)
 - Wake up vLLM
