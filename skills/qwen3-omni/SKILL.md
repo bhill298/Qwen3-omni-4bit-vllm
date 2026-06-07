@@ -11,6 +11,10 @@ Lets you do media analysis with Qwen3-omni (via vLLM) and automatically offloads
 
 ### 1. Setup Files
 1. **Check Environment**: Ensure the `$QWEN_MEDIA_DIR` environment variable is set. This is a required variable. If it is empty or undefined, you must stop and ask the user to provide the directory path.
+   - **CRITICAL for Windows/MSYS Bash**: The variable likely contains Windows paths with backslashes and spaces (e.g., `C:\Users\Name\Media`).
+   - **How to check and verify**: Run `printenv QWEN_MEDIA_DIR` to see the value. Verify the directory exists by running `ls -ld "$QWEN_MEDIA_DIR"`.
+   - **How to use it in Bash**: ALWAYS enclose the variable in double quotes (e.g., `cp media.mp4 "$QWEN_MEDIA_DIR/"`) in all bash commands. Do not attempt to manually escape backslashes, just use double quotes.
+   - **How to use it in JSON**: Backslashes will break JSON syntax. When generating `tasks.json` via bash, you MUST convert backslashes to forward slashes first using bash string replacement: `SAFE_DIR="${QWEN_MEDIA_DIR//\\//}"`, and use `$SAFE_DIR` in your JSON generation. Alternatively, write a small Python script to generate the JSON.
 2. **Copy Media**: The vLLM server only accesses `$QWEN_MEDIA_DIR`. Copy target files here first.
 3. **Create Prompts**: Write text prompts as `.txt` files in `$QWEN_MEDIA_DIR`.
 4. **Create tasks.json**: JSON array mapping media to prompt files.
@@ -31,8 +35,8 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 ```json
 [
   {
-    "media": "$QWEN_MEDIA_DIR/sunset.jpg",
-    "prompt": "$QWEN_MEDIA_DIR/prompt.txt",
+    "media": "$SAFE_DIR/sunset.jpg",
+    "prompt": "$SAFE_DIR/prompt.txt",
     "max_image_size": 768, "max_video_size": 512, "video_fps": 2.0, "max_video_duration": 120.0
   }
 ]
@@ -55,8 +59,9 @@ Use bash to delete your copied media, prompt files, and generated `_audio.wav` f
 ```bash
 cp example.mp4 "$QWEN_MEDIA_DIR/example.mp4"
 echo "What happens in this video?" > "$QWEN_MEDIA_DIR/prompt.txt"
+SAFE_DIR="${QWEN_MEDIA_DIR//\\//}"
 cat << EOF > tasks.json
-[{"media": "$QWEN_MEDIA_DIR/example.mp4", "prompt": "$QWEN_MEDIA_DIR/prompt.txt"}]
+[{"media": "$SAFE_DIR/example.mp4", "prompt": "$SAFE_DIR/prompt.txt"}]
 EOF
 python scripts/qwen3_omni_batch.py tasks.json
 rm "$QWEN_MEDIA_DIR/example.mp4" "$QWEN_MEDIA_DIR/prompt.txt" "$QWEN_MEDIA_DIR/example_audio.wav" tasks.json
