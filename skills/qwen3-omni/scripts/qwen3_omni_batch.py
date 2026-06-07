@@ -156,7 +156,7 @@ def process_task(task):
             check=True,
         )
         audio_uri = f"file:///media/{audio_path.relative_to(media_dir).as_posix()}"
-        content.append({"type": "input_audio", "input_audio": {"url": audio_uri}})
+        content.append({"type": "audio_url", "audio_url": {"url": audio_uri}})
     else:
         content.append({"type": "image_url", "image_url": {"url": media_uri}})
 
@@ -207,7 +207,7 @@ def main():
 
     if CONFIG["media_dir"] is None:
         log(
-            "ERROR: QWEN_MEDIA_DIR environment variable is not set. The LLM must set this to the media directory path."
+            "ERROR: QWEN_MEDIA_DIR environment variable is not set. Set this to the media directory path."
         )
         sys.exit(1)
 
@@ -217,7 +217,10 @@ def main():
     try:
         unload_llama_models()
         wake_vllm()
-        time.sleep(1)
+
+        print('waiting for server to come back up...')
+        while not _server_alive():
+            time.sleep(5)
 
         for i, task in enumerate(tasks):
             log(f"\n--- Task {i+1}/{len(tasks)} ---")

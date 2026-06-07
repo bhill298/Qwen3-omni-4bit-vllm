@@ -158,7 +158,7 @@ payload = {
                 {"type": "text", "text": "Describe this video in detail, including the audio/sounds."},
                 # reads the files directly from the disk
                 {"type": "video_url", "video_url": {"url": "file:///media/video.mp4"}},
-                {"type": "input_audio", "input_audio": {"url": "file:///media/audio.wav"}}
+                {"type": "audio_url", "audio_url": {"url": "file:///media/audio.wav"}}
             ]
         }
     ]
