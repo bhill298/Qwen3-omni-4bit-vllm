@@ -10,9 +10,10 @@ Lets you do media analysis with Qwen3-omni (via vLLM) and automatically offloads
 ## Agent Workflow
 
 ### 1. Setup Files
-1. **Copy Media**: The vLLM server only accesses `$QWEN_MEDIA_DIR`. Copy target files here first.
-2. **Create Prompts**: Write text prompts as `.txt` files in `$QWEN_MEDIA_DIR`.
-3. **Create tasks.json**: JSON array mapping media to prompt files.
+1. **Check Environment**: Ensure the `$QWEN_MEDIA_DIR` environment variable is set. This is a required variable. If it is empty or undefined, you must stop and ask the user to provide the directory path.
+2. **Copy Media**: The vLLM server only accesses `$QWEN_MEDIA_DIR`. Copy target files here first.
+3. **Create Prompts**: Write text prompts as `.txt` files in `$QWEN_MEDIA_DIR`.
+4. **Create tasks.json**: JSON array mapping media to prompt files.
 
 ### 2. Pre-computation (Optional)
 Check media details to estimate processing times and override default sizes if needed:
