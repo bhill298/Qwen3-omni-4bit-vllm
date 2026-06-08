@@ -47,14 +47,13 @@ Launch the container using the docker volumes and optimization flags. To enable 
 export MSYS_NO_PATHCONV=1
 
 # Start the server (set %QWEN_MEDIA_DIR% to the host dir you want to use to store temp files)
-docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --no-enable-prefix-caching --enable-sleep-mode --allowed-local-media-path /media
+docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --enable-sleep-mode --allowed-local-media-path /media
 ```
 
 ### Performance Considerations
 - `--max-model-len 16384`: Caps context size to save massive amounts of KV Cache VRAM. Can consider increasing if you need to pass long videos or text docs.
 - `--max-num-seqs 2`: Reduces CUDA graph capture size at startup and reduces KV cache memory overhead, in exchange for less batch parallelism.
 - `--disable-custom-all-reduce`: Avoids wasting time initializing multi-GPU IPC networks.
-- `--no-enable-prefix-caching`: Disables tracking of memory block hashes. If you send unique videos/images each time, the caching provides no benefit and tracking it slows startup.
 - `-v qwen_model_cache:/model`: Uses the fast docker volume. If you want to test updates to the weights, you must recopy them or revert to the slower Windows mount.
 - `-v vllm_compiler_cache:/root/.cache/vllm`: Saves the compiled PyTorch/Triton binaries so subsequent boots skip the 10-20s JIT compilation phase.
 

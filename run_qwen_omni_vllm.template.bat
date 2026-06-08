@@ -1,6 +1,6 @@
 @echo off
 :: Start vLLM in a new minimized window that will kill container on close
-start "vLLM Server" /MIN cmd /c "docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --no-enable-prefix-caching --enable-sleep-mode --allowed-local-media-path /media"
+start "vLLM Server" /MIN cmd /c "docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --enable-sleep-mode --allowed-local-media-path /media"
 
 echo Waiting for vLLM to load...
 :wait_loop
