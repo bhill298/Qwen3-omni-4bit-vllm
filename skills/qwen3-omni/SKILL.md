@@ -27,7 +27,7 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 
 ### 3. Batching & Time Estimates
 - Batch tasks to minimize model load/unload overhead. Limit total expected execution to ~1 hour max if possible.
-- **Videos**: Takes ~3x to 5x video length (at 512px/2fps defaults). E.g., 5s video = ~15s processing. Processing raw, high-resolution/high-FPS video *without* these constraints can easily take upwards of 30x the video length and will eat up a lot of tokens.
+- **Videos**: Takes ~3x to 5x video length (at 512px/4fps defaults). E.g., 5s video = ~15s processing. Processing raw, high-resolution/high-FPS video *without* these constraints can easily take upwards of 30x the video length and will eat up a lot of tokens.
 - **Images**: ~10-15s each (at 768px default). High-res images without this limit can take over 1 minute each.
 - **Audio**: Very fast, no downsampling.
 
@@ -36,7 +36,7 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
   {
     "media": "C:/Users/Name/Media/sunset.jpg",
     "prompt": "C:/Users/Name/Media/prompt.txt",
-    "max_image_size": 768, "max_video_size": 512, "video_fps": 2.0, "max_video_duration": 120.0
+    "max_image_size": 768, "max_video_size": 512, "video_fps": 4.0, "max_video_duration": 120.0
   }
 ]
 ```
@@ -57,7 +57,7 @@ Example tool call:
 ```
 
 ```bash
-# Optional CLI args: --max-image-size 768, --max-video-size 512, --video-fps 2.0, --max-video-duration -1.0, --skip-llama-unload
+# Optional CLI args: --max-image-size 768, --max-video-size 512, --video-fps 4.0, --max-video-duration -1.0, --skip-llama-unload
 python scripts/qwen3_omni_batch.py tasks.json
 ```
 *The script automatically manages model VRAM (unloads llama.cpp/wakes vLLM), preprocesses media in-place, queries the model, prints JSON results to stdout, and sleeps vLLM. --skip-llama-unload will skip the unload from llama and sleep vllm steps.*

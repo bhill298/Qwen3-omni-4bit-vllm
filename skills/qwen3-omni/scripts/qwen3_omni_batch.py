@@ -313,8 +313,8 @@ def main():
     parser.add_argument(
         "--video-fps",
         type=float,
-        default=2.0,
-        help="Frame rate for video downsampling (default 2.0)",
+        default=4.0,
+        help="Frame rate for video downsampling (default 4.0)",
     )
     parser.add_argument(
         "--max-video-duration",
