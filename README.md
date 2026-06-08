@@ -2,45 +2,28 @@
 
 This guide covers setting up, optimizing, and operating the **cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit** model using vLLM on a Windows/WSL2 system with an NVIDIA RTX 5090 (Blackwell architecture).
 
-## Understanding How vLLM Handles the Architecture
-
-The model's `config.json` contains `"architectures": ["Qwen3OmniMoeForConditionalGeneration"]`, which typically implies audio+text support. However, vLLM has its own internal registry (`registry.py`) that maps this string to `Qwen3OmniMoeThinkerForConditionalGeneration` — the text-only thinker variant. This means vLLM currently ignores all `talker.` and `code_predictor.` weights; they are never loaded into VRAM.
-
-If a future vLLM update adds audio output support and you want to guarantee text-only mode defensively, edit the `config.json` inside your model folder and change:
-```json
-  "architectures": ["Qwen3OmniMoeForConditionalGeneration"]
-```
-to:
-```json
-  "architectures": ["Qwen3OmniMoeThinkerForConditionalGeneration"]
-```
-Because vLLM maps both strings to the exact same Python class, this makes your intent explicit and protects you from future changes.
-
----
-
 ## Setting Up the Environment (Fresh Start)
 
 ### Build the Patched vLLM Image
-Because the RTX 5090 (`sm_120`) is a cutting-edge Blackwell architecture, upstream vLLM currently has two bugs requiring patches (Marlin MoE atomics and a CUDA seqlen crash in the Vision wrappers).
+The RTX 5090 (`sm_120`) Blackwell architecture has two upstream vLLM bugs requiring patches (Marlin MoE atomics and a CUDA seqlen crash in the Vision wrappers). This fixes those in the meantime. Additionally, this installs some missing audio handling dependencies for python.
 
-1. Ensure the `apply_patch.py` and `Dockerfile` are in your directory.
-2. Build the patched image:
-   ```bash
-   docker build -t vllm-qwen3omni-patched:latest .
-   ```
-*(Note: Once vLLM officially merges the fixes for `sm_120` Vision + Marlin atomics and adds audio dependencies for multimodal input, you can abandon this Dockerfile and simply use `vllm/vllm-openai:latest`.)*
+Build the patched image:
+```bash
+docker build -t vllm-qwen3omni-patched:latest .
+```
+*(Note: Once vLLM merges the fixes for `sm_120` Vision + Marlin atomics and adds audio dependencies for multimodal input, you can directly use `vllm/vllm-openai:latest`.)*
 
 ### Clone the Model & Fix Config
 1. Download the AWQ model:
-   ```bash
-   git clone https://huggingface.co/cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit
-   ```
-2. Open `config.json` inside the model folder and make the following fix to prevent a Pydantic crash (we already applied this, but good to know for a fresh setup):
+```bash
+git clone https://huggingface.co/cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit
+```
+2. Open `config.json` inside the model folder and make the following fix to prevent a Pydantic crash:
    - Replace `"rope_type": "default"` with `"rope_type": "mrope"` inside the `talker_config` -> `text_config` -> `rope_scaling` section.
    - Delete the legacy `"type": "default"` line immediately below it to avoid conflicts.
 
-### Create Docker Volumes for Model and Cache (Crucial for Speed)
-To avoid the Windows cross-filesystem slowdown and save time on repeated compilations, we create two native Docker volumes.
+### Create Docker Volumes for Model and Cache
+To avoid the Windows cross-filesystem slowdown and save time on repeated compilations, create two Docker volumes.
 ```bash
 # Create a persistent native docker volume for the model weights
 docker volume create qwen_model_cache
@@ -57,22 +40,22 @@ docker run --rm -v "C:\path\to\Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit:/source_mode
 
 ## Running the Server
 
-Launch the container using the native volumes and optimization flags. To enable dynamic unloading, we pass `-e VLLM_SERVER_DEV_MODE=1`.
+Launch the container using the docker volumes and optimization flags. To enable dynamic unloading, we pass `-e VLLM_SERVER_DEV_MODE=1` and `--enable-sleep-mode`. Alternatively, you can modify the provided `run_qwen_omni_vllm.template.bat` file on a Windows host, which by default launches then immediately puts vllm to sleep.
 
 ```bash
 # If using Git Bash on Windows, run this first to prevent path string corruption
 export MSYS_NO_PATHCONV=1
 
-# Start the server (replace C:\path\to\your\media with the one you actually want to use)
-docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "C:\path\to\your\media:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 8192 --max-num-seqs 2 --disable-custom-all-reduce --no-enable-prefix-caching --enable-sleep-mode --allowed-local-media-path /media
+# Start the server (set %QWEN_MEDIA_DIR% to the host dir you want to use to store temp files)
+docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --no-enable-prefix-caching --enable-sleep-mode --allowed-local-media-path /media
 ```
 
-### Tradeoffs
-- `--max-model-len 8192`: Caps context size to save massive amounts of KV Cache VRAM. Increase to `16384` or more if you need to pass long videos or text docs, but watch your VRAM usage.
-- `--max-num-seqs 2`: Drastically limits the scheduler's memory profiling overhead, and tricks vLLM into skipping 90% of its heavy CUDA graph captures during startup.
+### Performance Considerations
+- `--max-model-len 16384`: Caps context size to save massive amounts of KV Cache VRAM. Can consider increasing if you need to pass long videos or text docs.
+- `--max-num-seqs 2`: Reduces CUDA graph capture size at startup and reduces KV cache memory overhead, in exchange for less batch parallelism.
 - `--disable-custom-all-reduce`: Avoids wasting time initializing multi-GPU IPC networks.
-- `--no-enable-prefix-caching`: Disables tracking of memory block hashes. Because you send unique videos/images each time, the caching provides no benefit and tracking it slows startup.
-- `-v qwen_model_cache:/model`: Uses the fast volume. If you want to test updates to the weights, you must recopy them or revert to the slow Windows mount.
+- `--no-enable-prefix-caching`: Disables tracking of memory block hashes. If you send unique videos/images each time, the caching provides no benefit and tracking it slows startup.
+- `-v qwen_model_cache:/model`: Uses the fast docker volume. If you want to test updates to the weights, you must recopy them or revert to the slower Windows mount.
 - `-v vllm_compiler_cache:/root/.cache/vllm`: Saves the compiled PyTorch/Triton binaries so subsequent boots skip the 10-20s JIT compilation phase.
 
 ---
@@ -81,8 +64,8 @@ docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --uli
 
 ### Base64 vs Direct File Paths
 When sending media to the API, you have two choices:
-* **Base64 (`data:image/jpeg;base64,...`)**: Use this ONLY for small images or if the client and server are on completely different physical machines across the internet. Sending video files this way causes massive memory spikes (a 150MB video creates a 200MB JSON string, eating up 600MB+ of RAM during parsing) and blocks the server.
-* **Direct File Paths (`file:///media/...`)**: Use this for videos, audio, or when the client and server share the same filesystem via Docker mounts. It is infinitely faster and drastically reduces RAM spikes!
+* **Direct File Paths (`file:///media/...`)**: Use this for videos, audio, or when the client and server share the same filesystem via Docker mounts.
+* **Base64 (`data:image/jpeg;base64,...`)**: Use this for small images or if the client and server are on completely different physical machines across the internet. Sending video files this way may cause memory spikes (a 150MB video creates a 200MB JSON string, eating up 600MB+ of RAM during parsing) and could block the server.
 
 To use direct file paths, mount your media folder (e.g., `-v "C:\path\to\your\media:/media"`) and whitelist it (`--allowed-local-media-path /media`) in your docker run command, then pass the file URI as shown below.
 
@@ -168,8 +151,6 @@ requests.post("http://localhost:8000/v1/chat/completions", json=payload)
 
 ### Dynamically Unloading/Loading to free VRAM
 
-Because we set `VLLM_SERVER_DEV_MODE=1`, vLLM enables internal memory-management endpoints.
-
 **1. Sleep the Model (Free VRAM):**
 Tell vLLM to go to sleep. This offloads the active weights/allocations from the GPU directly to your system CPU RAM.
 ```bash
@@ -190,12 +171,29 @@ curl -X GET http://localhost:8000/is_sleeping
 ```
 
 ## Skill
-I added a skill in the skills/ directory to use this vllm server. It is hard-coded to talk to llama.cpp and load/unload itself and the vllm model. Set these environment vars:
+There is a skill in the skills/ directory to use this vllm server. It is hard-coded to talk to llama.cpp and load/unload itself and the vllm model. Set these environment vars:
+- `QWEN_MEDIA_DIR`
 - `LLAMA_SERVER_URL`
 - `VLLM_SERVER_URL`
-- `QWEN_MEDIA_DIR`
 
-The skill also includes a script, which you can run directly. Running the script requires python with requests installed and ffmpeg.
+The skill also includes a script, which you can also run directly. Running the script requires python with requests installed and ffmpeg.
+
+---
+
+## Understanding How vLLM Handles the Architecture
+
+The model's `config.json` contains `"architectures": ["Qwen3OmniMoeForConditionalGeneration"]`, which typically implies audio+text support. However, vLLM has its own internal registry (`registry.py`) that maps this string to `Qwen3OmniMoeThinkerForConditionalGeneration` — the text-only thinker variant. This means vLLM currently ignores all `talker.` and `code_predictor.` weights; they are never loaded into VRAM.
+
+If a future change makes it so that this matters and you want to force the thinker variant to save memory, you can make this change to the model `config.json`:
+```json
+  "architectures": ["Qwen3OmniMoeForConditionalGeneration"]
+```
+to:
+```json
+  "architectures": ["Qwen3OmniMoeThinkerForConditionalGeneration"]
+```
+
+---
 
 ## TODO
 This warning slows down inference, tracked in this issue https://github.com/vllm-project/vllm/issues/43009
