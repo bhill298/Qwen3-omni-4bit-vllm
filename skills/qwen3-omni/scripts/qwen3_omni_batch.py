@@ -7,11 +7,12 @@ configured media directory, because it passes direct file:///media/... URIs to
 the vLLM Docker container.
 """
 
+import argparse
 import json
-import sys
+import mimetypes
 import os
 import subprocess
-import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -30,9 +31,43 @@ CONFIG = {
     "temperature": float(os.environ.get("QWEN_TEMPERATURE", "0.7")),
 }
 
-VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".wmv", ".flv", ".mpeg", ".mpg"}
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
-AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac"}
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".m4v",
+    ".wmv",
+    ".flv",
+    ".mpeg",
+    ".mpg",
+    ".ogv",
+    ".ts",
+    ".3gp",
+}
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".tiff",
+    ".tif",
+    ".ico",
+    ".tga",
+}
+AUDIO_EXTENSIONS = {
+    ".wav",
+    ".mp3",
+    ".flac",
+    ".ogg",
+    ".m4a",
+    ".aac",
+    ".opus",
+    ".amr",
+}
 
 
 def log(msg):
@@ -126,12 +161,85 @@ def sleep_vllm():
 # ---------------------------------------------------------------------------
 
 
+def get_media_type(path):
+    """Determine media type (video, audio, or image) using progressive fallbacks."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+
+    # 1. Standard library mimetypes
+    mime, _ = mimetypes.guess_type(str(path))
+    if mime:
+        if mime.startswith("video/"):
+            return "video"
+        if mime.startswith("audio/"):
+            return "audio"
+        if mime.startswith("image/"):
+            return "image"
+
+    # 2. Extension sets fallback
+    if suffix in VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in AUDIO_EXTENSIONS:
+        return "audio"
+    if suffix in IMAGE_EXTENSIONS:
+        return "image"
+
+    # 3. ffprobe fallback
+    try:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,nb_frames,duration:format=format_name",
+            "-of",
+            "json",
+            str(path),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        info = json.loads(res.stdout)
+        streams = info.get("streams", [])
+
+        has_video = any(s.get("codec_type") == "video" for s in streams)
+        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+
+        if has_video:
+            # Differentiate static image formats mapped as video streams
+            fmt_name = info.get("format", {}).get("format_name", "")
+            if "image" in fmt_name or fmt_name in (
+                "png_pipe",
+                "bmp_pipe",
+                "tiff_pipe",
+            ):
+                return "image"
+
+            # Check frame and duration details to catch single-frame videos as images
+            v_stream = next(s for s in streams if s.get("codec_type") == "video")
+            nb_frames = v_stream.get("nb_frames")
+            duration = v_stream.get("duration") or info.get("format", {}).get(
+                "duration"
+            )
+            if (nb_frames and int(nb_frames) == 1) or (
+                duration and float(duration) == 0.0
+            ):
+                return "image"
+
+            return "video"
+
+        if has_audio:
+            return "audio"
+    except Exception:
+        pass
+
+    return "image"  # Default fallback
+
+
 def is_video(path):
-    return Path(path).suffix.lower() in VIDEO_EXTENSIONS
+    return get_media_type(path) == "video"
 
 
 def is_audio(path):
-    return Path(path).suffix.lower() in AUDIO_EXTENSIONS
+    return get_media_type(path) == "audio"
 
 
 def query_model(messages, timeout=None):
