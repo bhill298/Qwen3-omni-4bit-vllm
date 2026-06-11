@@ -13,14 +13,11 @@ docker build -t vllm-qwen3omni-patched:latest .
 ```
 *(Note: Once vLLM merges the fixes for `sm_120` Vision + Marlin atomics and adds audio dependencies for multimodal input, you can directly use `vllm/vllm-openai:latest`.)*
 
-### Clone the Model & Fix Config
-1. Download the AWQ model:
+### Clone the Model
+Download the AWQ model:
 ```bash
 git clone https://huggingface.co/cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit
 ```
-2. Open `config.json` inside the model folder and make the following fix to prevent a Pydantic crash:
-   - Replace `"rope_type": "default"` with `"rope_type": "mrope"` inside the `talker_config` -> `text_config` -> `rope_scaling` section.
-   - Delete the legacy `"type": "default"` line immediately below it to avoid conflicts.
 
 ### Create Docker Volumes for Model and Cache
 To avoid the Windows cross-filesystem slowdown and save time on repeated compilations, create two Docker volumes.
