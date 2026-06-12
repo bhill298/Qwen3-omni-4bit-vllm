@@ -303,8 +303,16 @@ def process_task(task, args):
                 cmd.extend(["-t", str(max_dur)])
             vf = f"fps={fps},scale='min({max_vid},iw)':'min({max_vid},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
             if stride_interval > 0:
-                vf = rf"select='lt(mod(t\,{stride_interval})\,{stride_length})',setpts=N/FRAME_RATE/TB," + vf
-                cmd.extend(["-af", rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB"])
+                vf = (
+                    rf"select='lt(mod(t\,{stride_interval})\,{stride_length})',setpts=N/FRAME_RATE/TB,"
+                    + vf
+                )
+                cmd.extend(
+                    [
+                        "-af",
+                        rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB",
+                    ]
+                )
 
             cmd.extend(
                 [
@@ -337,10 +345,18 @@ def process_task(task, args):
                     tmp_path.unlink()
         elif aud:
             if stride_interval > 0:
-                log(f"  Preprocessing audio: stride_interval={stride_interval}, stride_length={stride_length}")
+                log(
+                    f"  Preprocessing audio: stride_interval={stride_interval}, stride_length={stride_length}"
+                )
                 tmp_path = media_path.with_suffix(".tmp.wav")
                 cmd = ["ffmpeg", "-i", str(media_path), "-y"]
-                cmd.extend(["-af", rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB", str(tmp_path)])
+                cmd.extend(
+                    [
+                        "-af",
+                        rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB",
+                        str(tmp_path),
+                    ]
+                )
 
                 res = subprocess.run(cmd, capture_output=True, check=False)
                 if res.returncode == 0:
@@ -348,12 +364,13 @@ def process_task(task, args):
                     tmp_path.rename(media_path)
                     task["media"] = str(media_path)
                 else:
-                    log(f"  Warning: Audio preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                    log(
+                        f"  Warning: Audio preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}"
+                    )
                     if tmp_path.exists():
                         tmp_path.unlink()
             else:
                 log(f"  Preprocessing audio: no downsampling required")
-
 
         else:
             log(f"  Preprocessing image: max_size={max_img}")
@@ -445,7 +462,33 @@ def process_task(task, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Qwen3-Omni Batch Media Processor")
+    parser = argparse.ArgumentParser(
+        description="Qwen3-Omni Batch Media Processor",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Tasks JSON format:
+An array of objects, where each object represents a task.
+Required fields:
+  "media"  : Path to the media file (image, video, or audio)
+  "prompt" : Path to a text file containing the prompt for the model
+
+Optional fields (override global arguments for this specific task):
+  "max_image_size"     : int, max longest edge for images
+  "max_video_size"     : int, max longest edge for video frames
+  "video_fps"          : float, frame rate for video downsampling
+  "max_video_duration" : float, max seconds of video to process
+  "stride_interval"    : float, interval in seconds to extract a segment
+  "stride_length"      : int, length in seconds of each extracted segment
+
+Example tasks_file.json:
+[
+  {
+    "media": "/path/to/video.mp4",
+    "prompt": "/path/to/prompt.txt",
+    "video_fps": 2.0
+  }
+]
+""",
+    )
     parser.add_argument(
         "tasks_file", nargs="?", help="JSON tasks file (reads stdin if omitted)"
     )
