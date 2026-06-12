@@ -143,7 +143,9 @@ def wake_vllm():
         log("vLLM server woken up.")
         return True
     except Exception as e:
-        log(f"Error waking vLLM server (server is most likely not running or wrong url): {e}.")
+        log(
+            f"Error waking vLLM server (server is most likely not running or wrong url): {e}."
+        )
         return False
 
 
@@ -168,32 +170,38 @@ def get_media_type(path):
     path = Path(path)
     suffix = path.suffix.lower()
 
-    # 1. Standard library mimetypes
+    # Determine base type
+    base_type = "image"
     mime, _ = mimetypes.guess_type(str(path))
     if mime:
         if mime.startswith("video/"):
-            return "video"
-        if mime.startswith("audio/"):
-            return "audio"
-        if mime.startswith("image/"):
-            return "image"
+            base_type = "video"
+        elif mime.startswith("audio/"):
+            base_type = "audio"
+        elif mime.startswith("image/"):
+            base_type = "image"
+    else:
+        if suffix in VIDEO_EXTENSIONS:
+            base_type = "video"
+        elif suffix in AUDIO_EXTENSIONS:
+            base_type = "audio"
+        elif suffix in IMAGE_EXTENSIONS:
+            base_type = "image"
 
-    # 2. Extension sets fallback
-    if suffix in VIDEO_EXTENSIONS:
-        return "video"
-    if suffix in AUDIO_EXTENSIONS:
+    if base_type == "audio":
         return "audio"
-    if suffix in IMAGE_EXTENSIONS:
-        return "image"
 
-    # 3. ffprobe fallback
+    # Use ffprobe to count packets and definitively classify
     try:
         cmd = [
             "ffprobe",
             "-v",
             "error",
+            "-count_packets",
+            "-select_streams",
+            "v:0",
             "-show_entries",
-            "stream=codec_type,nb_frames,duration:format=format_name",
+            "stream=nb_read_packets,codec_type",
             "-of",
             "json",
             str(path),
@@ -202,38 +210,38 @@ def get_media_type(path):
         info = json.loads(res.stdout)
         streams = info.get("streams", [])
 
-        has_video = any(s.get("codec_type") == "video" for s in streams)
-        has_audio = any(s.get("codec_type") == "audio" for s in streams)
+        if streams:
+            v_stream = streams[0]
+            nb_packets = v_stream.get("nb_read_packets")
+            if nb_packets is not None:
+                if int(nb_packets) > 1:
+                    return "video"
+                else:
+                    return "image"
 
-        if has_video:
-            # Differentiate static image formats mapped as video streams
-            fmt_name = info.get("format", {}).get("format_name", "")
-            if "image" in fmt_name or fmt_name in (
-                "png_pipe",
-                "bmp_pipe",
-                "tiff_pipe",
-            ):
-                return "image"
-
-            # Check frame and duration details to catch single-frame videos as images
-            v_stream = next(s for s in streams if s.get("codec_type") == "video")
-            nb_frames = v_stream.get("nb_frames")
-            duration = v_stream.get("duration") or info.get("format", {}).get(
-                "duration"
-            )
-            if (nb_frames and int(nb_frames) == 1) or (
-                duration and float(duration) == 0.0
-            ):
-                return "image"
-
-            return "video"
-
-        if has_audio:
+        # If no video stream, check for audio
+        cmd_audio = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            str(path),
+        ]
+        res_audio = subprocess.run(
+            cmd_audio, capture_output=True, text=True, check=True
+        )
+        if json.loads(res_audio.stdout).get("streams"):
             return "audio"
+
     except Exception:
         pass
 
-    return "image"  # Default fallback
+    return base_type
 
 
 def is_video(path):
