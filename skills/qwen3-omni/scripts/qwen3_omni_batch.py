@@ -301,7 +301,19 @@ def process_task(task, args):
                 cmd.extend(["-t", str(max_dur)])
 
             vf = f"fps={fps},scale='min({max_vid},iw)':'min({max_vid},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
-            cmd.extend(["-vf", vf, "-c:v", "libx264", "-preset", "fast", str(tmp_path)])
+            cmd.extend(
+                [
+                    "-vf",
+                    vf,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "18",
+                    str(tmp_path),
+                ]
+            )
 
             res = subprocess.run(cmd, capture_output=True, check=False)
             if res.returncode == 0:
