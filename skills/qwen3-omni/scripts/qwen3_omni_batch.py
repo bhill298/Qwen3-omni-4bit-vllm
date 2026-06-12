@@ -244,12 +244,25 @@ def get_media_type(path):
     return base_type
 
 
-def is_video(path):
-    return get_media_type(path) == "video"
-
-
-def is_audio(path):
-    return get_media_type(path) == "audio"
+def has_audio_stream(path):
+    """Check if a media file has an audio stream."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "json",
+            str(path),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return bool(json.loads(res.stdout).get("streams"))
+    except Exception:
+        return False
 
 
 def query_model(messages, timeout=None):
@@ -286,8 +299,9 @@ def process_task(task, args):
     stride_interval = task.get("stride_interval", args.stride_interval)
     stride_length = int(task.get("stride_length", args.stride_length))
 
-    vid = is_video(media_path)
-    aud = is_audio(media_path)
+    media_type = get_media_type(media_path)
+    vid = media_type == "video"
+    aud = media_type == "audio"
     tmp_path = None
 
     try:
@@ -307,12 +321,13 @@ def process_task(task, args):
                     rf"select='lt(mod(t\,{stride_interval})\,{stride_length})',setpts=N/FRAME_RATE/TB,"
                     + vf
                 )
-                cmd.extend(
-                    [
-                        "-af",
-                        rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB",
-                    ]
-                )
+                if has_audio_stream(media_path):
+                    cmd.extend(
+                        [
+                            "-af",
+                            rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB",
+                        ]
+                    )
 
             cmd.extend(
                 [
@@ -335,7 +350,7 @@ def process_task(task, args):
                 except OSError:
                     pass
                 media_path = media_path.with_suffix(".mp4")
-                tmp_path.rename(media_path)
+                tmp_path.replace(media_path)
                 task["media"] = str(media_path)  # update task with new extension
             else:
                 log(
@@ -361,7 +376,7 @@ def process_task(task, args):
                 res = subprocess.run(cmd, capture_output=True, check=False)
                 if res.returncode == 0:
                     media_path = media_path.with_suffix(".wav")
-                    tmp_path.rename(media_path)
+                    tmp_path.replace(media_path)
                     task["media"] = str(media_path)
                 else:
                     log(
@@ -415,25 +430,30 @@ def process_task(task, args):
     if vid:
         content.append({"type": "video_url", "video_url": {"url": media_uri}})
 
-        # Extract audio next to the video if it exists
-        audio_path = media_path.with_name(f"{media_path.stem}_audio.wav")
-        log(f"  Extracting audio -> {audio_path.name}")
-        res = subprocess.run(
-            ["ffmpeg", "-i", str(media_path), "-y", str(audio_path)],
-            capture_output=True,
-            check=False,
-        )
-        if (
-            res.returncode == 0
-            and audio_path.exists()
-            and audio_path.stat().st_size > 0
-        ):
-            audio_uri = f"file:///media/{audio_path.relative_to(media_dir).as_posix()}"
-            content.append({"type": "audio_url", "audio_url": {"url": audio_uri}})
-        else:
-            log(
-                f"  No valid audio stream found or extraction failed. Skipping audio track."
+        if has_audio_stream(media_path):
+            # Extract audio next to the video if it exists
+            audio_path = media_path.with_name(f"{media_path.stem}_audio.wav")
+            log(f"  Extracting audio -> {audio_path.name}")
+            res = subprocess.run(
+                ["ffmpeg", "-i", str(media_path), "-y", str(audio_path)],
+                capture_output=True,
+                check=False,
             )
+            if (
+                res.returncode == 0
+                and audio_path.exists()
+                and audio_path.stat().st_size > 0
+            ):
+                audio_uri = (
+                    f"file:///media/{audio_path.relative_to(media_dir).as_posix()}"
+                )
+                content.append({"type": "audio_url", "audio_url": {"url": audio_uri}})
+            else:
+                log(
+                    f"  No valid audio stream found or extraction failed. Skipping audio track."
+                )
+        else:
+            log(f"  No audio stream detected. Skipping audio extraction.")
 
     elif aud:
         content.append({"type": "audio_url", "audio_url": {"url": media_uri}})

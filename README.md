@@ -42,8 +42,11 @@ Launch the container using the docker volumes and optimization flags. To enable 
 ```bash
 # If using Git Bash on Windows, run this first to prevent path string corruption
 export MSYS_NO_PATHCONV=1
+```
 
-# Start the server (set %QWEN_MEDIA_DIR% to the host dir you want to use to store temp files)
+Start the server. The snippet below uses Windows `cmd` syntax (`%QWEN_MEDIA_DIR%`). If you are using Bash, replace it with `"$QWEN_MEDIA_DIR"`, or `$env:QWEN_MEDIA_DIR` if using PowerShell.
+
+```cmd
 docker run --gpus all --name vllm-qwen-omni --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 --rm -it -v qwen_model_cache:/model -v vllm_compiler_cache:/root/.cache/vllm -v "%QWEN_MEDIA_DIR%:/media" -p 8000:8000 -e VLLM_SERVER_DEV_MODE=1 vllm-qwen3omni-patched:latest /model --trust-remote-code --tensor-parallel-size 1 --max-model-len 16384 --max-num-seqs 2 --disable-custom-all-reduce --enable-sleep-mode --allowed-local-media-path /media
 ```
 
@@ -117,7 +120,7 @@ requests.post("http://localhost:8000/v1/chat/completions", json=payload)
 
 
 ### Advanced Multimodal Inference (Video + Audio)
-Qwen3-Omni handles both video frames and audio natively. However, the OpenAI API specification requires you to separate the audio stream from the video file and pass them as two distinct objects in the `content` array (`video_url` and `input_audio`).
+Qwen3-Omni handles both video frames and audio natively. However, the OpenAI API specification requires you to separate the audio stream from the video file and pass them as two distinct objects in the `content` array (`video_url` and `audio_url`).
 
 *First, extract the audio from your video (e.g., using ffmpeg):*
 ```bash
