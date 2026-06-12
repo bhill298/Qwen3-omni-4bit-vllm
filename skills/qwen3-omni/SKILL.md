@@ -27,9 +27,9 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 
 ### 3. Batching & Time Estimates
 - Batch tasks to minimize model load/unload overhead. Limit total expected execution to ~1 hour max if possible.
-- **Videos**: Takes ~3x to 5x video length (at 512px/4fps defaults). E.g., 5s video = ~15s processing. Processing raw, high-resolution/high-FPS video *without* these constraints can easily take upwards of 30x the video length and will eat up a lot of tokens.
-- **Images**: ~10-15s each (at 768px default). High-res images without this limit can take over 1 minute each.
-- **Audio**: Very fast, no downsampling.
+- **Videos**: Takes ~0.3x video length (at 512px/4fps defaults). E.g., 60s video = ~18s processing. Processing raw, high-resolution/high-FPS video *without* these constraints can take much longer and will eat up a lot of tokens.
+- **Images**: ~3s each (at 768px default). High-res images without this limit will take much longer.
+- **Audio**: Fast, no downsampling.
 
 ```json
 [
