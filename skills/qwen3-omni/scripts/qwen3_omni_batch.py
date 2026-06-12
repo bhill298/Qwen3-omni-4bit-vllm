@@ -119,9 +119,9 @@ def unload_llama_models():
         # probably not needed
         time.sleep(0.1)
     except requests.exceptions.ConnectionError:
-        log("Error could not connect to llama.cpp server. Continuing.")
+        log("Warning: could not connect to llama.cpp server. Continuing.")
     except Exception as e:
-        log(f"Error unloading llama models ({e}).")
+        log(f"Warning: couldn not unload llama models ({e}).")
         raise
 
 
@@ -141,8 +141,10 @@ def wake_vllm():
         resp = requests.post(f"{CONFIG['vllm_server']}/wake_up", timeout=120)
         resp.raise_for_status()
         log("vLLM server woken up.")
+        return True
     except Exception as e:
-        log(f"Warning: Error waking vLLM server ({e}). Continuing.")
+        log(f"Error waking vLLM server (server is most likely not running or wrong url): {e}.")
+        return False
 
 
 def sleep_vllm():
@@ -153,7 +155,7 @@ def sleep_vllm():
         resp.raise_for_status()
         log("vLLM server is now sleeping.")
     except Exception as e:
-        log(f"Warning: Error sleeping vLLM server ({e}). Continuing.")
+        log(f"Warning: could not sleep vLLM server ({e}). Continuing.")
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +475,9 @@ def main():
             unload_llama_models()
         # need to wake before we send any requests (or else they will block in the queue)
         # fine if it's already awake so no need to check
-        wake_vllm()
+        if not wake_vllm():
+            # bail, server is most likely not running
+            os._exit(1)
 
         print("waiting for server to come back up...")
         # the wake up message is blocking, but this doesn't hurt to have just in case
