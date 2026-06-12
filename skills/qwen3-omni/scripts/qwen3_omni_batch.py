@@ -283,6 +283,8 @@ def process_task(task, args):
     max_vid = task.get("max_video_size", args.max_video_size)
     fps = task.get("video_fps", args.video_fps)
     max_dur = task.get("max_video_duration", args.max_video_duration)
+    stride_interval = task.get("stride_interval", args.stride_interval)
+    stride_length = int(task.get("stride_length", args.stride_length))
 
     vid = is_video(media_path)
     aud = is_audio(media_path)
@@ -299,8 +301,11 @@ def process_task(task, args):
             cmd = ["ffmpeg", "-i", str(media_path), "-y"]
             if max_dur > 0:
                 cmd.extend(["-t", str(max_dur)])
-
             vf = f"fps={fps},scale='min({max_vid},iw)':'min({max_vid},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+            if stride_interval > 0:
+                vf = rf"select='lt(mod(t\,{stride_interval})\,{stride_length})',setpts=N/FRAME_RATE/TB," + vf
+                cmd.extend(["-af", rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB"])
+
             cmd.extend(
                 [
                     "-vf",
@@ -330,9 +335,25 @@ def process_task(task, args):
                 )
                 if tmp_path.exists():
                     tmp_path.unlink()
-
         elif aud:
-            log(f"  Preprocessing audio: no downsampling required")
+            if stride_interval > 0:
+                log(f"  Preprocessing audio: stride_interval={stride_interval}, stride_length={stride_length}")
+                tmp_path = media_path.with_suffix(".tmp.wav")
+                cmd = ["ffmpeg", "-i", str(media_path), "-y"]
+                cmd.extend(["-af", rf"aselect='lt(mod(t\,{stride_interval})\,{stride_length})',asetpts=N/SR/TB", str(tmp_path)])
+
+                res = subprocess.run(cmd, capture_output=True, check=False)
+                if res.returncode == 0:
+                    media_path = media_path.with_suffix(".wav")
+                    tmp_path.rename(media_path)
+                    task["media"] = str(media_path)
+                else:
+                    log(f"  Warning: Audio preprocessing failed: {res.stderr.decode('utf-8', errors='ignore')}")
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+            else:
+                log(f"  Preprocessing audio: no downsampling required")
+
 
         else:
             log(f"  Preprocessing image: max_size={max_img}")
@@ -451,6 +472,18 @@ def main():
         type=float,
         default=-1.0,
         help="Max seconds of video to process, -1 for full video (default -1)",
+    )
+    parser.add_argument(
+        "--stride-interval",
+        type=float,
+        default=-1.0,
+        help="Interval in seconds to extract a segment (e.g. 60 for 1 segment every minute). -1 to disable. Note: If max-video-duration is set, it truncates the video BEFORE striding.",
+    )
+    parser.add_argument(
+        "--stride-length",
+        type=int,
+        default=1,
+        help="Integer length in seconds of each segment extracted by stride-interval. Ignored unless stride-interval > 0. (default 1)",
     )
     parser.add_argument(
         "--skip-llama-unload",
