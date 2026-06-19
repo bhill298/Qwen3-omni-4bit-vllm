@@ -47,14 +47,14 @@ for f in "$QWEN_MEDIA_DIR"/*; do echo "$f:"; ffprobe -v error -select_streams v:
 ### 4. Execute Script
 Run `scripts/qwen3_omni_batch.py` relative to the skill directory. Requires `requests` and `ffmpeg`.
 
-**CRITICAL TIMEOUT INSTRUCTION**: You MUST always run this script under bash with a very long timeout. You MUST set the exact timeout to `86400000` (24 hours) for this command. Always run with this exact timeout when running this script, all the time, no exceptions. Do not use the default timeout.
+**CRITICAL TIMEOUT INSTRUCTION**: If the tool to call to run this script supports a timeout, you MUST provide a value of 2 hours. Use the units the tool call takes, e.g. 7200 seconds or 7200000 ms. For this script, always set the timeout to 2 hours, using the appropriate units. Do not use the default timeout. If the tool call has a maximum of less than 2 hours, use the max value.
 
-Example tool call:
+Example tool call (e.g. if the tool call takes a timeout in seconds):
 ```json
 {
   "command": "python scripts/qwen3_omni_batch.py tasks.json",
   "description": "Run Qwen3-Omni batch script",
-  "timeout": 86400000
+  "timeout": <2 hours in tool call units or max allowed>
 }
 ```
 
@@ -75,7 +75,8 @@ echo "What happens in this video?" > "$QWEN_MEDIA_DIR/prompt.txt"
 # Generate tasks.json using the helper script to avoid escaping issues
 python scripts/generate_tasks.py "$QWEN_MEDIA_DIR/example.mp4" "$QWEN_MEDIA_DIR/prompt.txt" > tasks.json
 
-# Execute the batch script (REMEMBER to set timeout: 86400000 in your tool call!)
+# Execute the batch script
+# REMEMBER to set timeout: 2 hours (or max allowed) in your tool call!
 python scripts/qwen3_omni_batch.py tasks.json
 
 rm "$QWEN_MEDIA_DIR/example.mp4" "$QWEN_MEDIA_DIR/prompt.txt" "$QWEN_MEDIA_DIR/example_audio.wav" tasks.json
