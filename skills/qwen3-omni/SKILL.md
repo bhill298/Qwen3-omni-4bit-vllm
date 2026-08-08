@@ -1,6 +1,6 @@
 ---
 name: qwen3-omni
-description: Batch-process images, audio, and videos through the Qwen3-Omni multimodal model on vLLM to get text descriptions. Use when you need to describe images, analyze video content, or transcribe/describe audio.
+description: Batch-process images, audio, and videos through the Qwen3-Omni multimodal model on vLLM to get text descriptions. Use when you need to describe images, analyze video content, or transcribe/describe audio and you don't have native multimodal capabilities.
 ---
 
 # Qwen3-Omni Multimodal Processing
